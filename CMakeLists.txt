@@ -55,6 +55,10 @@ target_link_libraries(state_checkpoint PUBLIC Threads::Threads)
 add_executable(checkpoint_demo src/main.cpp)
 target_link_libraries(checkpoint_demo PRIVATE state_checkpoint)
 
+# CLI Application
+add_executable(process_checkpoint_cli src/cli/process_checkpoint_cli.cpp)
+target_link_libraries(process_checkpoint_cli PRIVATE state_checkpoint)
+
 # Tests
 if(BUILD_TESTS)
     enable_testing()
