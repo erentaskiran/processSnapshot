@@ -14,8 +14,6 @@ Download the pre-configured Arch Linux environment archive:
 
 **Download Link:** [arch.zip](https://drive.google.com/file/d/1hLlEgRtGzY1hLI_UVXxlPyi54dCjAiei/view?usp=share_link)
 
-> **Note:** Replace the link above with the actual download link provided by your instructor or project maintainer.
-
 The archive includes:
 - Pre-configured Arch Linux VM
 - Required development tools

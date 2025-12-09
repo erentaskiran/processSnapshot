@@ -22,7 +22,7 @@ This project requires Arch Linux environment. Follow these steps to set up the d
 #### Step 1: Download Arch Linux VM
 
 Download the pre-configured Arch Linux environment from:
-**[Download arch.zip](https://drive.google.com/file/d/1hLlEgRtGzY1hLI_UVXxlPyi54dCjAiei/view?usp=share_link)** *(Replace with actual link)*
+**[Download arch.zip](https://drive.google.com/file/d/1hLlEgRtGzY1hLI_UVXxlPyi54dCjAiei/view?usp=share_link)** 
 
 #### Step 2: Extract the Archive
 
