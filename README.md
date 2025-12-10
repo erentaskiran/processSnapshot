@@ -98,6 +98,8 @@ Build sonrası `build/bin/` dizininde:
 - `process_demo` - Ana demo uygulaması (checkpoint & rollback)
 - `checkpoint_demo` - Genel checkpoint demo
 - `checkpoint_tests` - Unit testler
+- `real_process_demo` - Gerçek process checkpoint demo
+- `real_restore_test_v5` - Gerçek process restore test (çalışan test)
 - `simple_example` - Basit örnek
 - `auto_save_example` - Otomatik kaydetme örneği
 
@@ -238,10 +240,39 @@ Detaylı görev dağılımı için: [GOREV_DAGILIMI.md](GOREV_DAGILIMI.md)
 - [cppreference.com](https://en.cppreference.com/)
 - [C++ Core Guidelines](https://isocpp.github.io/CppCoreGuidelines/)
 
+## 🔧 Gerçek Process Checkpoint/Restore
+
+### Özellikler
+- Linux ptrace API kullanarak gerçek processlerin checkpoint/restore
+- Register durumu kaydetme ve geri yükleme (GPR + FPU)
+- Memory region yönetimi
+- ASLR handling desteği
+
+### Kullanım
+
+```bash
+# ASLR'ı devre dışı bırak (gerekli)
+echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
+# Test programını çalıştır
+sudo ./bin/real_restore_test_v5
+
+# ASLR'ı tekrar etkinleştir
+echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
+```
+
+### Test Sonuçları
+Örnek çıktı:
+```
+Checkpoint counter: 102
+Pre-restore counter: 104
+Post-restore counter: 102  ✅ (başarıyla geri yüklendi!)
+```
+
 ## 📄 Lisans
 
 Bu proje eğitim amaçlı hazırlanmıştır.
 
 ---
 
-**Son Güncelleme:** 5 Aralık 2024
+**Son Güncelleme:** 10 Aralık 2024

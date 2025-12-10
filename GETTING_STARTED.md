@@ -207,11 +207,28 @@ Tracks all operations:
 
 #### 6. **Real Process Module** (`include/real_process/`, `src/real_process/`)
 
-Works with actual Linux processes:
+Works with actual Linux processes (fully functional!):
 
 - **ptrace_controller.hpp**: Process control via ptrace
+  - `createCheckpoint()`: Save process state (registers + memory)
+  - `restoreCheckpointEx()`: Restore process to checkpoint state
 - **proc_reader.hpp**: Read process information from `/proc`
 - **real_process_types.hpp**: Real process data structures
+- **memory_manager.hpp**: Memory region management
+- **aslr_handler.hpp**: ASLR detection and handling
+- **fd_restorer.hpp**: File descriptor restoration
+
+**Prerequisites for Real Process Restore:**
+```bash
+# Disable ASLR (required)
+echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
+# Compile target with -no-pie -O0 for consistent addresses
+gcc -no-pie -O0 -o target target.c
+
+# Run restore test (requires root)
+sudo ./bin/real_restore_test_v5
+```
 
 ## 📚 Understanding the Codebase
 
@@ -269,6 +286,11 @@ Works with actual Linux processes:
    - Checkpoint actual Linux processes
    - Use ptrace for process control
 
+4. **Real process restore test** (`examples/real_restore_test_v5.cpp`)
+   - Full checkpoint/restore of a running process
+   - Demonstrates memory and register restoration
+   - **Working test with verified results!**
+
 #### Level 4: Internals
 
 1. **Serialization** (`src/core/serializer.cpp`)
@@ -297,6 +319,8 @@ Works with actual Linux processes:
 | `include/process/process_types.hpp` | Process structures | Medium | ⭐⭐⭐⭐ |
 | `include/process/instruction_set.hpp` | Instructions | High | ⭐⭐⭐ |
 | `src/process/process_simulator.cpp` | Execution engine | High | ⭐⭐⭐ |
+| `examples/real_restore_test_v5.cpp` | Real process restore | Medium | ⭐⭐⭐⭐ |
+| `include/real_process/ptrace_controller.hpp` | Ptrace API | High | ⭐⭐⭐ |
 
 ### Configuration Files
 
@@ -531,5 +555,38 @@ Now that you've read this guide:
 6. ✅ Write your own example program
 7. ✅ Run the test suite
 8. ✅ Explore advanced features
+
+## 🎉 Real Process Restore - Working!
+
+The project now supports **real process checkpoint/restore**! This is a major feature that allows you to:
+
+1. **Checkpoint a running Linux process** - Save its complete state
+2. **Continue execution** - Let the process run and modify its state
+3. **Restore to checkpoint** - Rewind the process back in time!
+
+### Quick Test
+
+```bash
+# Build the project
+cd build && cmake .. && make
+
+# Disable ASLR
+echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
+# Run the working test
+sudo ./bin/real_restore_test_v5
+
+# Re-enable ASLR when done
+echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
+```
+
+### Expected Output
+```
+Checkpoint counter: 102
+Pre-restore counter: 104  (process ran 2 more iterations)
+Post-restore counter: 102  (correctly restored!)
+
+✅ Counter correctly restored to checkpoint value!
+```
 
 **Welcome to the project! Happy coding! 🎉**

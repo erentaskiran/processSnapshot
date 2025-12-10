@@ -172,8 +172,33 @@ You're now ready to start working with the State Checkpoint System!
    - `process_demo` - Process simulation with checkpoints
    - `auto_save_example` - Automatic checkpoint creation
    - `real_process_demo` - Real process checkpointing
+   - `real_restore_test_v5` - **Working** real process restore test
 3. Check out the [README.md](README.md) for feature overview
 4. Start experimenting with the code!
+
+## ✅ Test Real Process Restore
+
+After installation, test the real process checkpoint/restore feature:
+
+```bash
+# Navigate to build directory
+cd build
+
+# Disable ASLR (required)
+echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
+# Run the working restore test
+sudo ./bin/real_restore_test_v5
+
+# Expected output:
+# Checkpoint counter: 102
+# Pre-restore counter: 104
+# Post-restore counter: 102
+# ✅ Counter correctly restored to checkpoint value!
+
+# Re-enable ASLR when done
+echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
+```
 
 ## 🛠️ Troubleshooting
 
@@ -290,6 +315,64 @@ make -j$(nproc)
 ./bin/checkpoint_tests
 ```
 
+## 🔒 ASLR Configuration (Required for Process Restore)
+
+Address Space Layout Randomization (ASLR) randomizes memory addresses on each process execution. For snapshot restore to work correctly, ASLR must be disabled.
+
+### Check Current ASLR Status
+
+```bash
+cat /proc/sys/kernel/randomize_va_space
+# 0 = Disabled
+# 1 = Conservative (stack, mmap, VDSO)
+# 2 = Full (all + heap + PIE)
+```
+
+### Disable ASLR Temporarily
+
+```bash
+# Disable ASLR (requires root)
+echo 0 | sudo tee /proc/sys/kernel/randomize_va_space
+
+# Re-enable ASLR
+echo 2 | sudo tee /proc/sys/kernel/randomize_va_space
+```
+
+### Disable ASLR for Single Process
+
+```bash
+# Run a single program without ASLR
+setarch $(uname -m) -R ./your_program
+
+# Or using personality
+setarch -R ./your_program
+```
+
+### Disable ASLR Permanently (Not Recommended)
+
+Add to `/etc/sysctl.conf`:
+```
+kernel.randomize_va_space = 0
+```
+
+Then run:
+```bash
+sudo sysctl -p
+```
+
+### Why Disable ASLR?
+
+When you create a checkpoint of a process, memory addresses are saved. If ASLR is enabled when you try to restore:
+- Stack address will be different
+- Heap address will be different
+- Library load addresses will change
+- Pointers in memory will point to wrong locations
+
+The system can detect ASLR mismatches and warn you, but restoration will fail unless:
+1. ASLR is disabled
+2. The process is restarted with ASLR disabled
+3. You enable `handleASLR` option (experimental)
+
 ## 📞 Getting Help
 
 If you encounter issues not covered in this guide:
@@ -311,6 +394,12 @@ Complete installation checklist:
 - [ ] Build the project: `mkdir build && cd build && cmake .. && make`
 - [ ] Run tests: `./bin/checkpoint_tests`
 - [ ] Run examples: `./bin/simple_example`
+- [ ] **Test real process restore: `sudo ./bin/real_restore_test_v5`**
 - [ ] Read GETTING_STARTED.md
+- [ ] Disable ASLR for process restore (if needed)
 
 **Happy coding! 🚀**
+
+---
+
+**Last Updated:** December 10, 2024

@@ -198,6 +198,19 @@ public:
         const RestoreOptions& options = RestoreOptions()
     );
     
+    // Improved restore with detailed result
+    RestoreResult restoreCheckpointEx(
+        pid_t pid,
+        const RealProcessCheckpoint& checkpoint,
+        const RestoreOptions& options = RestoreOptions()
+    );
+    
+    // Validate restore (dry run)
+    RestoreResult validateRestore(
+        pid_t pid,
+        const RealProcessCheckpoint& checkpoint
+    );
+    
     // ========================================================================
     // Comparison / Diff
     // ========================================================================

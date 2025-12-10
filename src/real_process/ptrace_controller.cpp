@@ -813,46 +813,231 @@ PtraceError RealProcessCheckpointer::restoreCheckpoint(
     const RealProcessCheckpoint& checkpoint,
     const RestoreOptions& options) {
     
+    // Use the improved version and convert result
+    RestoreResult result = restoreCheckpointEx(pid, checkpoint, options);
+    
+    if (result.success) {
+        return PtraceError::SUCCESS;
+    }
+    
+    m_lastError = result.errorMessage;
+    return PtraceError::MEMORY_ERROR;
+}
+
+RestoreResult RealProcessCheckpointer::restoreCheckpointEx(
+    pid_t pid,
+    const RealProcessCheckpoint& checkpoint,
+    const RestoreOptions& options) {
+    
+    RestoreResult result;
+    result.success = false;
+    
+    reportProgress("Starting restore", 0.0);
+    
+    // Verify process exists
+    if (!m_procReader.processExists(pid)) {
+        result.errorMessage = "Process " + std::to_string(pid) + " does not exist";
+        return result;
+    }
+    
     // Attach to process
+    reportProgress("Attaching to process", 0.05);
     PtraceController ptrace;
     PtraceError err = ptrace.attach(pid);
     if (err != PtraceError::SUCCESS) {
-        m_lastError = "Failed to attach: " + ptraceErrorToString(err);
-        return err;
+        result.errorMessage = "Failed to attach: " + ptraceErrorToString(err);
+        return result;
+    }
+    
+    // Validation phase
+    if (options.validateBeforeRestore) {
+        reportProgress("Validating restore", 0.1);
+        
+        // Get current memory map
+        auto currentMap = m_procReader.getMemoryMaps(pid);
+        
+        // Check for ASLR differences
+        for (const auto& cpRegion : checkpoint.memoryMap) {
+            bool found = false;
+            for (const auto& curRegion : currentMap) {
+                if (cpRegion.startAddr == curRegion.startAddr &&
+                    cpRegion.size() == curRegion.size()) {
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found) {
+                // Check if this might be ASLR
+                for (const auto& curRegion : currentMap) {
+                    if (cpRegion.pathname == curRegion.pathname &&
+                        cpRegion.size() == curRegion.size() &&
+                        cpRegion.startAddr != curRegion.startAddr) {
+                        result.aslrDetected = true;
+                        result.aslrOffset = static_cast<int64_t>(curRegion.startAddr) - 
+                                           static_cast<int64_t>(cpRegion.startAddr);
+                        result.warnings.push_back(
+                            "ASLR detected: " + cpRegion.pathname + 
+                            " moved by " + std::to_string(result.aslrOffset) + " bytes");
+                        break;
+                    }
+                }
+                
+                if (!options.allocateMissingRegions && !result.aslrDetected) {
+                    result.warnings.push_back(
+                        "Memory region missing at 0x" + 
+                        std::to_string(cpRegion.startAddr));
+                }
+            }
+        }
+        
+        // If ASLR detected and not handling it, fail
+        if (result.aslrDetected && !options.handleASLR) {
+            result.errorMessage = "ASLR detected but handleASLR option is disabled. "
+                                  "Either disable ASLR or enable handleASLR option.";
+            if (options.stopOnError) {
+                return result;
+            }
+        }
+    }
+    
+    // Dry run - don't actually restore
+    if (options.dryRun) {
+        result.success = true;
+        result.errorMessage = "Dry run completed - no changes applied";
+        reportProgress("Dry run complete", 1.0);
+        return result;
     }
     
     // Restore registers
     if (options.restoreRegisters) {
-        err = ptrace.setRegisters(checkpoint.registers);
+        reportProgress("Restoring registers", 0.2);
+        
+        LinuxRegisters regsToRestore = checkpoint.registers;
+        
+        // Adjust for ASLR if needed
+        if (result.aslrDetected && options.handleASLR) {
+            // Adjust RIP (instruction pointer)
+            regsToRestore.rip += result.aslrOffset;
+            // Adjust RSP and RBP (stack pointers) - stack might have different offset
+            // Note: This is a simplification, real ASLR handling is more complex
+            result.warnings.push_back(
+                "Adjusted RIP for ASLR: 0x" + std::to_string(regsToRestore.rip));
+        }
+        
+        err = ptrace.setRegisters(regsToRestore);
         if (err != PtraceError::SUCCESS) {
-            m_lastError = "Failed to restore registers: " + ptraceErrorToString(err);
-            return err;
+            result.errorMessage = "Failed to restore registers: " + ptraceErrorToString(err);
+            if (options.stopOnError) {
+                return result;
+            }
+        } else {
+            result.registersRestored = 1;
         }
         
         // FPU registers
         if (checkpoint.registers.hasFPU) {
-            ptrace.setFPURegisters(checkpoint.registers.fpuState);
+            err = ptrace.setFPURegisters(checkpoint.registers.fpuState);
+            if (err != PtraceError::SUCCESS) {
+                result.warnings.push_back("Failed to restore FPU registers");
+            }
         }
     }
     
     // Restore memory
     if (options.restoreMemory) {
+        reportProgress("Restoring memory", 0.3);
+        
+        int totalRegions = checkpoint.memoryDumps.size();
+        int processedRegions = 0;
+        int skippedReadOnly = 0;
+        
         for (const auto& dump : checkpoint.memoryDumps) {
-            err = ptrace.restoreMemoryRegion(dump);
-            if (err != PtraceError::SUCCESS) {
-                // Log but continue
-                m_lastError = "Warning: Failed to restore region at " + 
-                             std::to_string(dump.region.startAddr);
+            // Skip read-only regions - they can't be restored and that's expected
+            if (!dump.region.writable) {
+                skippedReadOnly++;
+                processedRegions++;
+                reportProgress("Restoring memory", 
+                              0.3 + 0.5 * (double(processedRegions) / totalRegions));
+                continue;
             }
+            
+            // Calculate target address (adjust for ASLR if needed)
+            uint64_t targetAddr = dump.region.startAddr;
+            if (result.aslrDetected && options.handleASLR) {
+                // Only adjust code/data segments, not stack
+                if (!dump.region.isStack()) {
+                    targetAddr += result.aslrOffset;
+                }
+            }
+            
+            // Create modified dump with adjusted address
+            MemoryDump adjustedDump = dump;
+            adjustedDump.region.startAddr = targetAddr;
+            adjustedDump.region.endAddr = targetAddr + dump.region.size();
+            
+            err = ptrace.restoreMemoryRegion(adjustedDump);
+            if (err != PtraceError::SUCCESS) {
+                result.memoryRegionsFailed++;
+                result.warnings.push_back(
+                    "Failed to restore memory region at 0x" + 
+                    std::to_string(targetAddr) + ": " + ptraceErrorToString(err));
+                
+                if (options.stopOnError && !options.ignoreMemoryErrors) {
+                    result.errorMessage = "Memory restore failed";
+                    return result;
+                }
+            } else {
+                result.memoryRegionsRestored++;
+            }
+            
+            processedRegions++;
+            reportProgress("Restoring memory", 
+                          0.3 + 0.5 * (double(processedRegions) / totalRegions));
         }
+    }
+    
+    // Restore file descriptors
+    if (options.restoreFileDescriptors && !checkpoint.fileDescriptors.empty()) {
+        reportProgress("Restoring file descriptors", 0.85);
+        
+        // Note: FD restoration requires the FDRestorer class
+        // This is a simplified implementation
+        result.warnings.push_back(
+            "File descriptor restoration requested but not fully implemented");
+        
+        // Mark as skipped for now
+        result.fdsFailed = checkpoint.fileDescriptors.size();
     }
     
     // Continue process
     if (options.continueAfterRestore) {
-        ptrace.cont();
+        reportProgress("Resuming process", 0.95);
+        err = ptrace.cont();
+        if (err != PtraceError::SUCCESS) {
+            result.warnings.push_back("Failed to continue process: " + 
+                                      ptraceErrorToString(err));
+        }
     }
     
-    return PtraceError::SUCCESS;
+    // Success if we got here
+    result.success = (result.memoryRegionsFailed == 0 || options.ignoreMemoryErrors);
+    
+    if (!result.success) {
+        result.errorMessage = "Restore completed with " + 
+                              std::to_string(result.memoryRegionsFailed) + " failed regions";
+    }
+    
+    reportProgress("Restore complete", 1.0);
+    return result;
+}
+
+RestoreResult RealProcessCheckpointer::validateRestore(
+    pid_t pid,
+    const RealProcessCheckpoint& checkpoint) {
+    
+    RestoreOptions options = RestoreOptions::validation();
+    return restoreCheckpointEx(pid, checkpoint, options);
 }
 
 RealProcessCheckpointer::CheckpointDiff RealProcessCheckpointer::compareCheckpoints(

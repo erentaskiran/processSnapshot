@@ -253,18 +253,93 @@ struct CheckpointOptions {
 // Restore Options
 // ============================================================================
 struct RestoreOptions {
+    // What to restore
     bool restoreRegisters;
     bool restoreMemory;
     bool restoreFileDescriptors;
     bool restoreSignals;
-    bool continueAfterRestore;  // PTRACE_CONT çağır
+    
+    // Control flow
+    bool continueAfterRestore;      // PTRACE_CONT after restore
+    bool stopOnError;               // Stop immediately on first error
+    bool dryRun;                    // Validate only, don't apply changes
+    
+    // Memory handling
+    bool allocateMissingRegions;    // Create memory regions if missing
+    bool handleASLR;                // Try to handle ASLR address differences
+    bool validateBeforeRestore;     // Check all regions exist before starting
+    
+    // Error tolerance
+    bool ignoreMemoryErrors;        // Continue if memory write fails
+    bool ignoreFDErrors;            // Continue if FD restoration fails
     
     RestoreOptions()
         : restoreRegisters(true), restoreMemory(true),
           restoreFileDescriptors(false),  // Tehlikeli, dikkatli kullan
           restoreSignals(true),
-          continueAfterRestore(true) {}
+          continueAfterRestore(true),
+          stopOnError(true),
+          dryRun(false),
+          allocateMissingRegions(true),
+          handleASLR(false),
+          validateBeforeRestore(true),
+          ignoreMemoryErrors(false),
+          ignoreFDErrors(true) {}
+    
+    // Preset: Safe restore (validates everything, stops on error)
+    static RestoreOptions safe() {
+        RestoreOptions opt;
+        opt.stopOnError = true;
+        opt.validateBeforeRestore = true;
+        opt.ignoreMemoryErrors = false;
+        return opt;
+    }
+    
+    // Preset: Best effort (tries to restore as much as possible)
+    static RestoreOptions bestEffort() {
+        RestoreOptions opt;
+        opt.stopOnError = false;
+        opt.ignoreMemoryErrors = true;
+        opt.ignoreFDErrors = true;
+        return opt;
+    }
+    
+    // Preset: Dry run (validation only)
+    static RestoreOptions validation() {
+        RestoreOptions opt;
+        opt.dryRun = true;
+        opt.validateBeforeRestore = true;
+        return opt;
+    }
+};
+
+// ============================================================================
+// Restore Result
+// ============================================================================
+struct RestoreResult {
+    bool success;
+    std::string errorMessage;
+    
+    // Statistics
+    int registersRestored;
+    int memoryRegionsRestored;
+    int memoryRegionsFailed;
+    int fdsRestored;
+    int fdsFailed;
+    
+    // Warnings (non-fatal issues)
+    std::vector<std::string> warnings;
+    
+    // ASLR info
+    bool aslrDetected;
+    int64_t aslrOffset;
+    
+    RestoreResult() : success(false), registersRestored(0),
+                      memoryRegionsRestored(0), memoryRegionsFailed(0),
+                      fdsRestored(0), fdsFailed(0),
+                      aslrDetected(false), aslrOffset(0) {}
 };
 
 } // namespace real_process
 } // namespace checkpoint
+
