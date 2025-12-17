@@ -16,7 +16,6 @@ set(TEST_SOURCES
     test_logger.cpp
     test_rollback.cpp
     test_integration.cpp
-    test_process.cpp
 )
 
 # Test executable

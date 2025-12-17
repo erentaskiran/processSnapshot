@@ -29,7 +29,6 @@ file(GLOB_RECURSE STATE_SOURCES "src/state/*.cpp")
 file(GLOB_RECURSE LOGGER_SOURCES "src/logger/*.cpp")
 file(GLOB_RECURSE ROLLBACK_SOURCES "src/rollback/*.cpp")
 file(GLOB_RECURSE UTILS_SOURCES "src/utils/*.cpp")
-file(GLOB_RECURSE PROCESS_SOURCES "src/process/*.cpp")
 file(GLOB_RECURSE REAL_PROCESS_SOURCES "src/real_process/*.cpp")
 
 # Ana kütüphane
@@ -39,7 +38,6 @@ add_library(state_checkpoint STATIC
     ${LOGGER_SOURCES}
     ${ROLLBACK_SOURCES}
     ${UTILS_SOURCES}
-    ${PROCESS_SOURCES}
     ${REAL_PROCESS_SOURCES}
 )
 

@@ -169,7 +169,6 @@ You're now ready to start working with the State Checkpoint System!
 1. Read the [GETTING_STARTED.md](GETTING_STARTED.md) guide to understand the project structure
 2. Explore the examples in `build/bin/`:
    - `simple_example` - Basic checkpoint usage
-   - `process_demo` - Process simulation with checkpoints
    - `auto_save_example` - Automatic checkpoint creation
    - `real_process_demo` - Real process checkpointing
    - `real_restore_test_v5` - **Working** real process restore test
