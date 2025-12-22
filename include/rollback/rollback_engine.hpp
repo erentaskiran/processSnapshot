@@ -6,6 +6,14 @@
 #include <functional>
 #include <stack>
 
+// Forward declarations for file operation support
+namespace checkpoint {
+namespace real_process {
+    class FileOperationTracker;
+    class ReverseExecutor;
+}
+}
+
 namespace checkpoint {
 
 // Geri alma planı
@@ -95,6 +103,14 @@ public:
     // Ek özellikler
     void setConfirmationCallback(std::function<bool(const RollbackPlan&)> callback);
     void setMaxUndoHistory(size_t count);
+    
+    // File operation reverse execution support
+    void setFileOperationTracker(std::shared_ptr<real_process::FileOperationTracker> tracker);
+    void setReverseExecutionEnabled(bool enabled);
+    bool isReverseExecutionEnabled() const;
+    
+    // Preview file operations that will be reversed
+    std::vector<std::string> previewFileReversal(CheckpointId targetId);
     
     // İstatistikler
     size_t getRollbackCount() const;

@@ -23,7 +23,6 @@ bool BinarySerializer::deserialize(const StateData& data, void* output, size_t s
 
 StateData BinarySerializer::compress(const StateData& data) {
     // Basit RLE (Run-Length Encoding) sıkıştırma
-    // TODO: Gerçek bir sıkıştırma kütüphanesi (zlib, lz4) kullanılabilir
     StateData compressed;
     compressed.reserve(data.size());
     

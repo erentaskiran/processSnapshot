@@ -7,6 +7,14 @@
 #include <sys/types.h>
 #include <sys/user.h>
 
+// Forward declaration for file operations
+namespace checkpoint {
+namespace real_process {
+    struct FileOperation;
+    class FileOperationLog;
+}
+}
+
 namespace checkpoint {
 namespace real_process {
 
@@ -187,6 +195,10 @@ struct RealProcessCheckpoint {
     // File Descriptors (opsiyonel - tam restore için)
     std::vector<FileDescriptorInfo> fileDescriptors;
     
+    // File Operations Log - Dosya işlemleri günlüğü (reverse execution için)
+    std::vector<uint8_t> fileOperationLogData;  // Serialized FileOperationLog
+    bool hasFileOperationLog;
+    
     // Signals
     SignalInfo signals;
     
@@ -201,7 +213,7 @@ struct RealProcessCheckpoint {
     uint64_t totalMemorySize() const;
     uint64_t dumpedMemorySize() const;
     
-    RealProcessCheckpoint() : checkpointId(0), timestamp(0) {}
+    RealProcessCheckpoint() : checkpointId(0), timestamp(0), hasFileOperationLog(false) {}
 };
 
 // ============================================================================

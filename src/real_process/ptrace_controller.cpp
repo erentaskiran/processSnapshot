@@ -1010,12 +1010,25 @@ RestoreResult RealProcessCheckpointer::restoreCheckpointEx(
         result.fdsFailed = checkpoint.fileDescriptors.size();
     }
     
-    // Continue process
+    // Detach from process (always needed to release the process)
+    // If continueAfterRestore is true, process will continue running
+    // If false, process will remain stopped (requires manual handling)
+    reportProgress("Releasing process", 0.95);
+    
     if (options.continueAfterRestore) {
-        reportProgress("Resuming process", 0.95);
-        err = ptrace.cont();
+        // Detach will automatically continue the process
+        err = ptrace.detach();
         if (err != PtraceError::SUCCESS) {
-            result.warnings.push_back("Failed to continue process: " + 
+            result.warnings.push_back("Failed to detach from process: " + 
+                                      ptraceErrorToString(err));
+        }
+    } else {
+        // User wants process to stay stopped - first stop it, then detach
+        // After detach with SIGSTOP, process will be stopped but not traced
+        ptrace.stop();
+        err = ptrace.detach();
+        if (err != PtraceError::SUCCESS) {
+            result.warnings.push_back("Failed to detach from process: " + 
                                       ptraceErrorToString(err));
         }
     }

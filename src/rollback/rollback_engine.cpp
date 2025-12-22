@@ -1,4 +1,6 @@
 #include "rollback/rollback_engine.hpp"
+#include "real_process/file_operation.hpp"
+#include "real_process/reverse_executor.hpp"
 #include "utils/helpers.hpp"
 #include <stack>
 #include <algorithm>
@@ -19,6 +21,11 @@ struct RollbackEngine::Impl {
     size_t rollbackCount = 0;
     Duration totalRollbackTime{0};
     
+    // File operation reverse execution support
+    std::shared_ptr<real_process::FileOperationTracker> fileTracker;
+    std::unique_ptr<real_process::ReverseExecutor> reverseExecutor;
+    bool enableReverseExecution = true;
+    
     std::mutex mutex;
 };
 
@@ -27,6 +34,10 @@ RollbackEngine::RollbackEngine(std::shared_ptr<StateManager> stateManager,
     : m_impl(std::make_unique<Impl>()) {
     m_impl->stateManager = stateManager;
     m_impl->logger = logger;
+    
+    // Initialize reverse executor with safe defaults
+    real_process::ReverseOptions reverseOpts = real_process::ReverseOptions::safe();
+    m_impl->reverseExecutor = std::make_unique<real_process::ReverseExecutor>(reverseOpts);
 }
 
 RollbackEngine::~RollbackEngine() = default;
@@ -109,11 +120,53 @@ Result<RollbackResult> RollbackEngine::executeRollback(const RollbackPlan& plan,
         return Result<RollbackResult>::success(result);
     }
     
-    // İşlemleri geri al
+    // ============================================================
+    // REVERSE FILE OPERATIONS EXECUTION (Yeni eklenen kısım)
+    // ============================================================
+    if (m_impl->enableReverseExecution && m_impl->fileTracker && m_impl->reverseExecutor) {
+        if (progress) {
+            progress(0.1, "Reversing file operations...");
+        }
+        
+        // Get file operations since the target checkpoint
+        auto& fileLog = m_impl->fileTracker->getLog();
+        auto fileOps = fileLog.getOperationsSince(plan.targetCheckpoint);
+        
+        if (!fileOps.empty()) {
+            // Set up progress callback for reverse executor
+            m_impl->reverseExecutor->setProgressCallback(
+                [&progress](size_t current, size_t total, const std::string& status) {
+                    if (progress) {
+                        double fileProgress = 0.1 + (0.4 * static_cast<double>(current) / total);
+                        progress(fileProgress, "File: " + status);
+                    }
+                });
+            
+            // Execute reverse operations in LIFO order
+            auto reverseResult = m_impl->reverseExecutor->reverseOperations(fileOps);
+            
+            if (!reverseResult.allSucceeded) {
+                for (const auto& res : reverseResult.results) {
+                    if (!res.success) {
+                        result.warnings.push_back("File reverse failed: " + res.errorMessage);
+                    }
+                }
+            }
+            
+            if (m_impl->logger) {
+                m_impl->logger->info("Rollback", 
+                    "Reversed " + std::to_string(reverseResult.successCount) + "/" + 
+                    std::to_string(reverseResult.totalOperations) + " file operations");
+            }
+        }
+    }
+    // ============================================================
+    
+    // İşlemleri geri al (state operations)
     size_t totalOps = plan.operationsToUndo.size();
     for (size_t i = 0; i < totalOps; ++i) {
         if (progress) {
-            double progressVal = static_cast<double>(i) / totalOps;
+            double progressVal = 0.5 + (0.4 * static_cast<double>(i) / totalOps);
             progress(progressVal, "Undoing operation " + std::to_string(i + 1) + "/" + std::to_string(totalOps));
         }
         
@@ -282,6 +335,30 @@ size_t RollbackEngine::getRollbackCount() const {
 
 Duration RollbackEngine::getTotalRollbackTime() const {
     return m_impl->totalRollbackTime;
+}
+
+void RollbackEngine::setFileOperationTracker(
+    std::shared_ptr<real_process::FileOperationTracker> tracker) {
+    m_impl->fileTracker = std::move(tracker);
+}
+
+void RollbackEngine::setReverseExecutionEnabled(bool enabled) {
+    m_impl->enableReverseExecution = enabled;
+}
+
+bool RollbackEngine::isReverseExecutionEnabled() const {
+    return m_impl->enableReverseExecution;
+}
+
+std::vector<std::string> RollbackEngine::previewFileReversal(CheckpointId targetId) {
+    if (!m_impl->fileTracker || !m_impl->reverseExecutor) {
+        return {};
+    }
+    
+    auto& fileLog = m_impl->fileTracker->getLog();
+    auto fileOps = fileLog.getOperationsSince(targetId);
+    
+    return m_impl->reverseExecutor->previewReverse(fileOps);
 }
 
 // ==================== AutoRollbackManager ====================
